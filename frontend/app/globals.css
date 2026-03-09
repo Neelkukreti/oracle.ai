@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --oracle-bg: #0a0d14;
+  --oracle-surface: #111520;
+  --oracle-border: #1e2535;
+  --oracle-green: #00ff88;
+  --oracle-red: #ff3366;
+  --oracle-blue: #00aaff;
+  --oracle-yellow: #ffcc00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--oracle-bg);
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  height: 100%;
+  overflow: hidden;
+}
+
+#__next {
+  height: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Hide scrollbar while preserving scroll */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keyframes */
+@keyframes signal-in {
+  from { transform: translateY(-4px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  10%  { opacity: 0.06; }
+  90%  { opacity: 0.06; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes oracle-breathe {
+  0%, 100% { opacity: 0.6; filter: blur(40px); }
+  50%       { opacity: 1;   filter: blur(60px); }
+}
+
+/* Green glow helper */
+.oracle-glow {
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.12), 0 0 60px rgba(0, 255, 136, 0.05);
+}
+
+/* Scan line overlay for active state */
+.scan-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 255, 136, 0.03) 50%,
+    transparent 100%
+  );
+  animation: scan-line 4s linear infinite;
+}
