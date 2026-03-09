@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { Mic, MicOff, WifiOff } from 'lucide-react';
+import { Mic, MicOff, WifiOff, Send } from 'lucide-react';
 
 // Errors that are transient / not user-actionable — swallow silently
 const SILENT_ERRORS = new Set(['network', 'service-not-allowed', 'no-speech', 'aborted']);
@@ -19,7 +19,9 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
   const [isListening, setIsListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState<string>('');
   const [voiceDegraded, setVoiceDegraded] = useState(false); // persistent network issues
+  const [fallbackText, setFallbackText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const fallbackInputRef = useRef<HTMLInputElement>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -149,8 +151,21 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
     setIsListening(false);
     setLastTranscript('');
     setVoiceDegraded(false);
+    setFallbackText('');
     setError(null);
     errorCountRef.current = 0;
+  };
+
+  // Focus fallback input when voice degrades
+  useEffect(() => {
+    if (voiceDegraded) setTimeout(() => fallbackInputRef.current?.focus(), 100);
+  }, [voiceDegraded]);
+
+  const submitFallback = () => {
+    const text = fallbackText.trim();
+    if (!text || !onUserSpeech) return;
+    onUserSpeech(text);
+    setFallbackText('');
   };
 
   useEffect(() => () => stopMic(), []);
@@ -185,6 +200,30 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
             : 'Mic On'
           : 'Mic'}
       </button>
+
+      {/* Fallback text input when voice recognition has network errors */}
+      {voiceDegraded && isMicActive && onUserSpeech && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); submitFallback(); }}
+          className="flex items-center gap-1 mt-0.5"
+        >
+          <input
+            ref={fallbackInputRef}
+            type="text"
+            value={fallbackText}
+            onChange={(e) => setFallbackText(e.target.value)}
+            placeholder="Type to ask..."
+            className="flex-1 min-w-0 bg-oracle-yellow/5 border border-oracle-yellow/25 rounded-md px-2 py-1 text-[11px] text-white/80 placeholder:text-white/25 focus:outline-none focus:border-oracle-yellow/50 font-mono"
+          />
+          <button
+            type="submit"
+            disabled={!fallbackText.trim()}
+            className="shrink-0 p-1 rounded-md bg-oracle-yellow/10 border border-oracle-yellow/25 text-oracle-yellow/70 hover:bg-oracle-yellow/20 disabled:opacity-25 transition-all"
+          >
+            <Send className="w-3 h-3" />
+          </button>
+        </form>
+      )}
 
       {lastTranscript && !voiceDegraded && (
         <p className="text-[10px] text-oracle-green/65 truncate max-w-[140px]" title={lastTranscript}>
