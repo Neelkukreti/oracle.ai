@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { TradingAnalysis, TradingAnalysisSchema } from './types.js';
 import { fetchIndicators, buildIndicatorContext } from './taapi.js';
 
@@ -19,8 +19,8 @@ export interface GeminiCallbacks {
 }
 
 export class GeminiLiveClient {
-  private genAI: GoogleGenerativeAI | null;
-  private model: any;
+  private genAI: GoogleGenAI | null;
+  private modelId: string;
   private callbacks: GeminiCallbacks;
   private isActive = false;
   private mockMode: boolean;
@@ -33,15 +33,11 @@ export class GeminiLiveClient {
     this.mockMode = !config.apiKey;
     this.callbacks = callbacks;
     this.systemPrompt = this.getSystemPrompt();
+    this.modelId = config.model || 'gemini-2.5-flash';
     if (!this.mockMode) {
-      this.genAI = new GoogleGenerativeAI(config.apiKey);
-      this.model = this.genAI.getGenerativeModel({
-        model: config.model || 'gemini-2.5-flash',
-        systemInstruction: this.systemPrompt,
-      });
+      this.genAI = new GoogleGenAI({ apiKey: config.apiKey });
     } else {
       this.genAI = null;
-      this.model = null;
     }
   }
 
@@ -149,9 +145,11 @@ For the "speech" field: speak only about what you can literally see in the scree
 
       parts.push({ text: promptText });
 
-      const result = await this.model.generateContent({
+      const result = await this.genAI!.models.generateContent({
+        model: this.modelId,
         contents: [{ role: 'user', parts }],
-        generationConfig: {
+        config: {
+          systemInstruction: this.systemPrompt,
           temperature: 0.5,
           topP: 0.9,
           topK: 40,
@@ -160,7 +158,7 @@ For the "speech" field: speak only about what you can literally see in the scree
         },
       });
 
-      const text = result.response.text();
+      const text = result.text ?? '';
       this.callbacks.onLog('info', `Gemini response (${text.length} chars): ${text.substring(0, 300)}`);
       this.processText(text);
     } catch (error) {
