@@ -39,7 +39,7 @@ export interface TradingAnalysis {
 export type ClientMessage =
   | { type: 'audio_chunk'; data: string; timestamp: number }
   | { type: 'frame'; data: string; width: number; height: number; timestamp: number }
-  | { type: 'start'; sessionId: string }
+  | { type: 'start'; sessionId: string; geminiApiKey?: string }
   | { type: 'stop'; sessionId: string }
   | { type: 'heartbeat'; timestamp: number }
   | { type: 'question'; text: string; timestamp: number; symbol?: string; interval?: string };
