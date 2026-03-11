@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { ClientMessage, ServerMessage, TradingAnalysis } from '@/lib/types';
+import { playReadyBeep } from '@/lib/beep';
 
 export interface ConversationEntry {
   role: 'ai' | 'user';
@@ -20,6 +21,7 @@ export interface UseOracleReturn {
   latestAnalysis: TradingAnalysis | null;
   conversation: ConversationEntry[];
   latestSpeech: string | null;
+  isSpeaking: boolean;
 }
 
 export function useOracle(url: string): UseOracleReturn {
@@ -28,6 +30,8 @@ export function useOracle(url: string): UseOracleReturn {
   const [latestAnalysis, setLatestAnalysis] = useState<TradingAnalysis | null>(null);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [latestSpeech, setLatestSpeech] = useState<string | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speakCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string>('');
@@ -61,8 +65,20 @@ export function useOracle(url: string): UseOracleReturn {
     return () => window.speechSynthesis.removeEventListener('voiceschanged', pickVoice);
   }, []);
 
+  const endSpeaking = useCallback(() => {
+    playReadyBeep();
+    // 1.5s cooldown after speech ends before accepting mic input again
+    if (speakCooldownRef.current) clearTimeout(speakCooldownRef.current);
+    speakCooldownRef.current = setTimeout(() => {
+      setIsSpeaking(false);
+      speakCooldownRef.current = null;
+    }, 1500);
+  }, []);
+
   const speakText = useCallback(async (text: string) => {
     if (typeof window === 'undefined') return;
+    setIsSpeaking(true);
+    if (speakCooldownRef.current) { clearTimeout(speakCooldownRef.current); speakCooldownRef.current = null; }
 
     // Optional: ElevenLabs if key is set
     const ELEVENLABS_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
@@ -86,7 +102,7 @@ export function useOracle(url: string): UseOracleReturn {
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
           audioRef.current = audio;
-          audio.onended = () => URL.revokeObjectURL(url);
+          audio.onended = () => { URL.revokeObjectURL(url); endSpeaking(); };
           await audio.play();
           return;
         }
@@ -98,9 +114,10 @@ export function useOracle(url: string): UseOracleReturn {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.97;
     utterance.pitch = 1.0;
+    utterance.onend = () => endSpeaking();
     if (voiceRef.current) utterance.voice = voiceRef.current;
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [endSpeaking]);
 
   useEffect(() => {
     if (!url) return;
@@ -116,7 +133,7 @@ export function useOracle(url: string): UseOracleReturn {
     ws.onmessage = (event) => {
       try {
         const message: ServerMessage = JSON.parse(event.data);
-        handleServerMessage(message);
+        handleServerMessageRef.current(message);
       } catch (error) {
         console.error('Failed to parse server message:', error);
       }
@@ -162,6 +179,9 @@ export function useOracle(url: string): UseOracleReturn {
     },
     [speakText]
   );
+
+  const handleServerMessageRef = useRef(handleServerMessage);
+  useEffect(() => { handleServerMessageRef.current = handleServerMessage; }, [handleServerMessage]);
 
   const sendMessage = useCallback((message: ClientMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -211,5 +231,6 @@ export function useOracle(url: string): UseOracleReturn {
     latestAnalysis,
     conversation,
     latestSpeech,
+    isSpeaking,
   };
 }

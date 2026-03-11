@@ -1,7 +1,7 @@
 // Server-side only — TAAPI proxy integration
 // Key never leaves the backend; injected via process.env
 
-const PROXY_URL = process.env.TAAPI_PROXY_URL || 'https://fedha-functions.azurewebsites.net/api/taapi-proxy';
+const PROXY_URL = process.env.TAAPI_PROXY_URL || '';
 const PROXY_KEY = process.env.TAAPI_PROXY_KEY || '';
 
 export interface IndicatorData {

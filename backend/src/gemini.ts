@@ -119,7 +119,9 @@ export class GeminiLiveClient {
         });
         this.callbacks.onLog('info', `Frame attached (${this.latestFrameWidth}x${this.latestFrameHeight})`);
       } else {
-        this.callbacks.onLog('warn', 'No frame available — answering without screenshot');
+        this.callbacks.onLog('warn', 'No frame available — cannot analyze chart');
+        this.callbacks.onSpeech("I can't see your screen yet. Click Share Screen to let me analyze your chart.");
+        return;
       }
 
       // Optionally enrich with live TAAPI indicators
@@ -135,8 +137,15 @@ export class GeminiLiveClient {
       }
 
       const promptText = indicatorContext
-        ? `${indicatorContext}\n\nUser question: "${question}"\n\nAnalyze the trading chart in the screenshot. Use BOTH the visual chart AND the live indicator data above to give a more accurate answer. Return a JSON object with your analysis.`
-        : `User question: "${question}"\n\nAnalyze the trading chart in this screenshot and answer the user's question. Return a JSON object with your analysis.`;
+        ? `User question: "${question}"
+
+Look at the screenshot. Identify the ticker symbol and current price DIRECTLY from what is printed on the chart — do not assume or guess.
+
+Supplementary indicator data (only use if the symbol matches what you see on screen — otherwise ignore):
+${indicatorContext}
+
+For the "speech" field: speak only about what you can literally see in the screenshot. Mention the actual ticker and price you read from the chart. Return a JSON object.`
+        : `User question: "${question}"\n\nLook at the screenshot. Read the ticker symbol and price directly from the chart — do not guess. Speak only about what you can see. Return a JSON object.`;
 
       parts.push({ text: promptText });
 
@@ -146,7 +155,7 @@ export class GeminiLiveClient {
           temperature: 0.5,
           topP: 0.9,
           topK: 40,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           responseMimeType: 'application/json',
         },
       });
@@ -165,8 +174,29 @@ export class GeminiLiveClient {
   // RESPONSE PROCESSING
   // ============================================================================
 
+  // Strip any JSON fragments, markdown, or report-like phrasing that would sound bad when spoken
+  private sanitizeSpeech(raw: string): string {
+    let s = raw.trim();
+    // Drop anything that looks like leaked JSON
+    if (s.startsWith('{') || s.startsWith('"analysis') || s.startsWith('"instrument')) return '';
+    // Strip markdown bold/italic
+    s = s.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1');
+    // Strip backticks
+    s = s.replace(/`([^`]+)`/g, '$1');
+    // Collapse multiple spaces
+    s = s.replace(/\s{2,}/g, ' ').trim();
+    // Hard cap at 300 chars — traders want short responses
+    return s.slice(0, 300);
+  }
+
   private processText(text: string): void {
     let parsedData: any = null;
+    let speechSent = false;
+
+    const speak = (raw: string) => {
+      const clean = this.sanitizeSpeech(raw);
+      if (clean) { this.callbacks.onSpeech(clean); speechSent = true; }
+    };
 
     // 1. Direct JSON parse
     try {
@@ -188,33 +218,47 @@ export class GeminiLiveClient {
           try { parsedData = JSON.parse(text.slice(start, end + 1)); } catch {}
         }
       }
+
+      // 4. Partial/truncated JSON — regex-extract speech field directly
+      //    (Gemini sometimes truncates JSON; speech is always near the top)
+      if (!parsedData && !speechSent) {
+        const speechMatch = text.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (speechMatch) {
+          const extracted = speechMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"');
+          speak(extracted);
+          this.callbacks.onLog('info', 'Extracted speech from truncated JSON');
+        }
+      }
     }
 
     if (parsedData) {
       const validated = TradingAnalysisSchema.safeParse(parsedData);
       if (validated.success) {
         this.callbacks.onAnalysis(validated.data);
-        if (validated.data.speech) {
-          this.callbacks.onSpeech(validated.data.speech);
-        }
+        if (validated.data.speech) speak(validated.data.speech);
       } else {
-        // Schema mismatch — try to use speech-like field
+        // Schema mismatch — extract speech field only; never speak raw JSON
         const speech = parsedData.speech || parsedData.message || parsedData.response;
         if (speech && typeof speech === 'string') {
-          this.callbacks.onSpeech(speech);
-          const partial: TradingAnalysis = { speech };
-          const pv = TradingAnalysisSchema.safeParse(partial);
+          speak(speech);
+          const pv = TradingAnalysisSchema.safeParse({ ...parsedData, speech });
           if (pv.success) this.callbacks.onAnalysis(pv.data);
-        } else {
-          this.callbacks.onSpeech(text.slice(0, 300).trim());
         }
         this.callbacks.onLog('warn', `Schema issues: ${JSON.stringify(validated.error.flatten().fieldErrors).slice(0, 200)}`);
       }
     } else {
-      // Plain text response — use as speech
-      if (text.trim()) {
-        this.callbacks.onSpeech(text.trim().slice(0, 500));
+      // Plain text — only speak if it doesn't look like JSON
+      const trimmed = text.trim();
+      if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('"')) {
+        speak(trimmed);
+      } else if (trimmed) {
+        this.callbacks.onLog('warn', 'Unparseable JSON-like response, skipping speech');
       }
+    }
+
+    // Safety net: always fire onSpeech so the frontend never stays stuck
+    if (!speechSent) {
+      this.callbacks.onSpeech('Analysis complete — check the panel for details.');
     }
   }
 
@@ -223,18 +267,23 @@ export class GeminiLiveClient {
   // ============================================================================
 
   private getSystemPrompt(): string {
-    return `You are Oracle, a sharp trading partner sitting next to the user. You speak like a real human trader — casual, direct, confident. Never robotic. Never like you're reading a report.
+    return `You are Oracle, a real-time chart analyst. You only describe what you can literally see in the screenshot — never guess, never invent.
 
-Your expertise: reading charts in real time, spotting key levels, calling trend direction, flagging risk.
+ABSOLUTE RULES — violating these is a critical failure:
+- NEVER state a price, level, ticker, or indicator value you cannot directly read from the chart image
+- NEVER hallucinate. If you cannot clearly see something, say "I can't read that clearly" instead of guessing
+- The ticker symbol and price MUST come from what's printed on the chart — not from any context or assumption
+- If the chart is unclear or partially visible, say so honestly
 
-CRITICAL rules for the "speech" field:
-- Sound like a real person talking, NOT a written report
-- Use natural spoken language: contractions, casual phrasing, first person
-- BAD: "Strong bearish momentum with price breaking below short-term moving averages."
-- GOOD: "Yeah that's clearly bearish — BTC just broke below 67k with strong selling. I'd wait before touching this."
-- BAD: "The instrument displays bullish trend strength on the 4H timeframe."
-- GOOD: "Looking bullish on the 4H. Price held 42k support nicely, I'd lean long here."
-- Max 2 sentences. No jargon dumps. Speak it out loud in your head first.
+SPEECH style rules:
+- Sound like a real trader talking, not a written report
+- Use contractions, first person, casual phrasing — max 2 sentences
+- NEVER repeat information from a previous response — each answer must be fresh
+- If asked for a trade direction (long/short, buy/sell), give a DEFINITIVE answer — say exactly what you'd do and why, then add "not financial advice" at the end
+- GOOD: "I'd go long here — BTC is holding 66,250 with momentum turning up. Stop below 65,800. Not financial advice."
+- GOOD: "ETH is sitting right at 2,020 and looks like it's building for a move. I'd watch that 2,000 level as the key support."
+- BAD: "The instrument shows bullish momentum with RSI at 57." (never read back indicator numbers)
+- BAD: Hedging with "I'd wait for more confirmation" when the user explicitly asked for a trade call
 
 Output format — respond with a SINGLE JSON object:
 {

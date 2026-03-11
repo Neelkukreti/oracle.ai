@@ -12,13 +12,14 @@ const BACKOFF = [300, 800, 2000, 5000, 10000];
 interface AudioVoiceProps {
   onAudioChunk: (data: string) => void;
   onUserSpeech?: (text: string) => void;
+  onAudioLevel?: (level: number) => void;
 }
 
-export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
+export function AudioVoice({ onAudioChunk, onUserSpeech, onAudioLevel }: AudioVoiceProps) {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [lastTranscript, setLastTranscript] = useState<string>('');
-  const [voiceDegraded, setVoiceDegraded] = useState(false); // persistent network issues
+  const [lastSentText, setLastSentText] = useState<string>('');
+  const [voiceDegraded, setVoiceDegraded] = useState(false);
   const [fallbackText, setFallbackText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const fallbackInputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +31,12 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
   const stoppedRef = useRef(false);
   const errorCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Always-fresh refs so callbacks use the latest props (fixes stale closures)
+  const onUserSpeechRef = useRef(onUserSpeech);
+  useEffect(() => { onUserSpeechRef.current = onUserSpeech; }, [onUserSpeech]);
+  const onAudioLevelRef = useRef(onAudioLevel);
+  useEffect(() => { onAudioLevelRef.current = onAudioLevel; }, [onAudioLevel]);
 
   const startMic = async () => {
     try {
@@ -61,6 +68,14 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
         let binary = '';
         for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         onAudioChunk(btoa(binary));
+
+        // RMS audio level for visualization
+        if (onAudioLevelRef.current) {
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+          const rms = Math.sqrt(sum / inputData.length);
+          onAudioLevelRef.current(Math.min(1, rms * 7));
+        }
       };
 
       source.connect(processor);
@@ -96,7 +111,7 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
 
     recognition.onstart = () => {
       setIsListening(true);
-      errorCountRef.current = 0; // successful start resets backoff
+      errorCountRef.current = 0;
       setVoiceDegraded(false);
     };
 
@@ -105,23 +120,21 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript;
       }
-      if (finalTranscript.trim()) {
-        const text = finalTranscript.trim();
-        setLastTranscript(text);
-        onUserSpeech(text);
-      }
+      if (!finalTranscript.trim()) return;
+
+      const text = finalTranscript.trim();
+      setLastSentText(text);
+      onUserSpeechRef.current?.(text);
     };
 
     recognition.onerror = (e: any) => {
       if (SILENT_ERRORS.has(e.error)) {
-        // Count consecutive network-type errors to detect persistent degradation
         if (e.error === 'network' || e.error === 'service-not-allowed') {
           errorCountRef.current++;
           if (errorCountRef.current >= 3) setVoiceDegraded(true);
         }
         return;
       }
-      // Surface non-transient errors (not-allowed, audio-capture, etc.)
       setError(`Voice: ${e.error}`);
     };
 
@@ -149,22 +162,21 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
     audioContextRef.current = null;
     setIsMicActive(false);
     setIsListening(false);
-    setLastTranscript('');
+    setLastSentText('');
     setVoiceDegraded(false);
     setFallbackText('');
     setError(null);
     errorCountRef.current = 0;
   };
 
-  // Focus fallback input when voice degrades
   useEffect(() => {
     if (voiceDegraded) setTimeout(() => fallbackInputRef.current?.focus(), 100);
   }, [voiceDegraded]);
 
   const submitFallback = () => {
     const text = fallbackText.trim();
-    if (!text || !onUserSpeech) return;
-    onUserSpeech(text);
+    if (!text || !onUserSpeechRef.current) return;
+    onUserSpeechRef.current(text);
     setFallbackText('');
   };
 
@@ -179,7 +191,9 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
           isMicActive
             ? voiceDegraded
               ? 'bg-oracle-yellow/10 border border-oracle-yellow/30 text-oracle-yellow/80 hover:bg-oracle-yellow/20'
-              : 'bg-oracle-green/15 border border-oracle-green/35 text-oracle-green hover:bg-oracle-green/25'
+              : isListening
+              ? 'bg-oracle-green/15 border border-oracle-green/40 text-oracle-green hover:bg-oracle-green/22'
+              : 'bg-white/5 border border-white/15 text-white/50 hover:bg-white/10'
             : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
         }`}
       >
@@ -225,9 +239,9 @@ export function AudioVoice({ onAudioChunk, onUserSpeech }: AudioVoiceProps) {
         </form>
       )}
 
-      {lastTranscript && !voiceDegraded && (
-        <p className="text-[10px] text-oracle-green/65 truncate max-w-[140px]" title={lastTranscript}>
-          "{lastTranscript}"
+      {lastSentText && !voiceDegraded && (
+        <p className="text-[10px] text-oracle-green/65 truncate max-w-[160px]" title={lastSentText}>
+          "{lastSentText}"
         </p>
       )}
 
