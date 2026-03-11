@@ -139,6 +139,52 @@ oracle/
 
 ---
 
+## Reproducible Testing
+
+### Option A — Hosted demo (zero setup)
+
+1. Open **[https://frontend-ebon-iota-49.vercel.app](https://frontend-ebon-iota-49.vercel.app)**
+2. Click the **⚙️ Settings** gear icon (top right)
+3. Paste your free Gemini API key → [get one here](https://aistudio.google.com/app/apikey) (no billing required)
+4. Click **Save**
+5. Click **Start Oracle**
+6. Click **Share Screen** — share your browser tab, a TradingView chart, or any chart window
+7. Ask a question (voice or text): *"What's the trend here?"* or *"Is this a good entry?"*
+8. ✅ Analysis panel on the right populates with trend, support/resistance levels, and a buy/sell/wait recommendation. Oracle speaks the answer aloud.
+
+### Option B — Run locally
+
+**1. Start the backend**
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Add your GEMINI_API_KEY to .env
+npm run dev
+# → Oracle Backend running on :8080
+```
+
+**2. Start the frontend**
+```bash
+cd frontend
+npm install
+cp .env.example .env.local
+# .env.local already points to ws://localhost:8080/ws by default
+npm run dev
+# → http://localhost:3000
+```
+
+**3. Test end-to-end**
+1. Open `http://localhost:3000`
+2. Click **Start Oracle**
+3. Click **Share Screen** → share a tab with any chart (TradingView, Yahoo Finance, Binance, etc.)
+4. Ask a question — type it in the text box or speak it
+5. ✅ Within 3 seconds: analysis sidebar updates + Oracle speaks the response
+
+**No trading account needed** — any chart visible on screen works. The text input box (bottom of sidebar) lets you test without a microphone.
+
+---
+
 ## License
 
 MIT — free to use, modify, and deploy.
