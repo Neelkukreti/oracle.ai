@@ -88,7 +88,7 @@ wss.on('connection', (ws: WebSocket) => {
 
   async function handleClientMessage(message: ClientMessage): Promise<void> {
     switch (message.type) {
-      case 'start':     return handleStart();
+      case 'start':     return handleStart(message.geminiApiKey);
       case 'stop':      return handleStop();
       case 'frame':     return handleFrame(message.data, message.width, message.height, message.timestamp);
       case 'question':  return handleQuestion(message.text, message.symbol, message.interval);
@@ -101,10 +101,15 @@ wss.on('connection', (ws: WebSocket) => {
     }
   }
 
-  async function handleStart(): Promise<void> {
+  async function handleStart(geminiApiKey?: string): Promise<void> {
+    const apiKey = geminiApiKey || GEMINI_API_KEY;
     log('info', `Starting Oracle session for ${sessionId}`);
+    if (!apiKey) {
+      sendMessage(ws, { type: 'status', status: 'error', message: 'Gemini API key required — enter it in Settings', timestamp: Date.now() });
+      return;
+    }
     try {
-      const client = new GeminiLiveClient({ apiKey: GEMINI_API_KEY }, geminiCallbacks);
+      const client = new GeminiLiveClient({ apiKey }, geminiCallbacks);
       await client.start();
       geminiClients.set(sessionId, client);
       session.geminiSessionActive = true;

@@ -80,8 +80,11 @@ export function useOracle(url: string): UseOracleReturn {
     setIsSpeaking(true);
     if (speakCooldownRef.current) { clearTimeout(speakCooldownRef.current); speakCooldownRef.current = null; }
 
-    // Optional: ElevenLabs if key is set
-    const ELEVENLABS_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
+    // Optional: ElevenLabs if key is set (prefer localStorage, fall back to env var)
+    const ELEVENLABS_KEY =
+      (typeof window !== 'undefined' && localStorage.getItem('oracle_elevenlabs_key')) ||
+      process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY ||
+      '';
     if (ELEVENLABS_KEY) {
       try {
         if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
@@ -212,7 +215,9 @@ export function useOracle(url: string): UseOracleReturn {
     setConversation([]);
     setLatestAnalysis(null);
     setLatestSpeech(null);
-    sendMessage({ type: 'start', sessionId: sessionIdRef.current });
+    const geminiApiKey =
+      (typeof window !== 'undefined' && localStorage.getItem('oracle_gemini_key')) || undefined;
+    sendMessage({ type: 'start', sessionId: sessionIdRef.current, geminiApiKey });
   }, [sendMessage]);
 
   const stop = useCallback(() => {

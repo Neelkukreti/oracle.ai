@@ -65,6 +65,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('start'),
     sessionId: z.string(),
+    geminiApiKey: z.string().optional(),
   }),
   z.object({
     type: z.literal('stop'),

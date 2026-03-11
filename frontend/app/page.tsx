@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Square, Send, Loader2, ChevronRight, RefreshCw, ArrowRight, Eye, Brain, Zap } from 'lucide-react';
+import { Play, Square, Send, Loader2, ChevronRight, RefreshCw, ArrowRight, Eye, Brain, Zap, Settings } from 'lucide-react';
+import { SettingsModal } from '@/components/SettingsModal';
 import { FloatingOracle } from '@/components/FloatingOracle';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOracle } from '@/hooks/useOracle';
@@ -12,7 +13,6 @@ import { ChartOverlay } from '@/components/ChartOverlay';
 import { AnalysisSidebar } from '@/components/AnalysisSidebar';
 import { TradingViewChart } from '@/components/TradingViewChart';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'BNB/USDT'];
 const INTERVALS = ['15m', '1h', '4h', '1d'];
 const QUICK_CHIPS = ['Is this a good long?', 'Where is key support?', 'What invalidates this?', 'What is the trend?'];
@@ -51,6 +51,22 @@ const STEPS = [
 ];
 
 export default function Page() {
+  const [wsUrl, setWsUrl] = useState(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Read WS URL from localStorage on client; show settings on first visit if no Gemini key
+  useEffect(() => {
+    const storedUrl = localStorage.getItem('oracle_ws_url');
+    if (storedUrl) setWsUrl(storedUrl);
+    if (!localStorage.getItem('oracle_gemini_key')) setSettingsOpen(true);
+  }, []);
+
+  const handleSettingsClose = () => {
+    setSettingsOpen(false);
+    const storedUrl = localStorage.getItem('oracle_ws_url');
+    if (storedUrl) setWsUrl(storedUrl);
+  };
+
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -65,7 +81,7 @@ export default function Page() {
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { isConnected, sendAudioChunk, sendFrame, sendQuestion, start, stop, latestAnalysis, conversation, latestSpeech, isSpeaking } = useOracle(WS_URL);
+  const { isConnected, sendAudioChunk, sendFrame, sendQuestion, start, stop, latestAnalysis, conversation, latestSpeech, isSpeaking } = useOracle(wsUrl);
   const { data: indicators, loading: indLoading, refresh: refreshIndicators } = useIndicators(symbol, interval, isSessionActive);
 
   useEffect(() => { if (latestSpeech) setIsThinking(false); }, [latestSpeech]);
@@ -123,6 +139,7 @@ export default function Page() {
   if (!isSessionActive && !stream) {
     return (
       <div className="min-h-screen bg-oracle-bg text-white overflow-x-hidden font-sans">
+        <SettingsModal open={settingsOpen} onClose={handleSettingsClose} />
 
         {/* ── Fixed Background ── */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden select-none">
@@ -195,6 +212,10 @@ export default function Page() {
                 {isConnected ? 'LIVE' : 'OFFLINE'}
               </span>
             </div>
+            <button onClick={() => setSettingsOpen(true)} title="Settings"
+              className="p-2 rounded-lg border border-white/10 text-white/40 hover:text-white/70 hover:border-white/20 transition-colors">
+              <Settings className="w-4 h-4" />
+            </button>
             <ScreenShare onFrame={sendFrame} onStream={setStream} fps={3} quality={0.7} />
             <AudioVoice onAudioChunk={sendAudioChunk} onUserSpeech={handleUserSpeech} />
             <button onClick={handleStart} disabled={!isConnected}
@@ -467,6 +488,7 @@ export default function Page() {
   // ── TRADING DASHBOARD ──────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen bg-oracle-bg overflow-hidden">
+      <SettingsModal open={settingsOpen} onClose={handleSettingsClose} />
       {/* ─── Top bar ─── */}
       <header className="flex items-center px-5 py-3 border-b border-oracle-border bg-oracle-surface/90 backdrop-blur-sm z-20 shrink-0 gap-4">
         <div className="flex items-center gap-2.5 shrink-0">
@@ -525,6 +547,10 @@ export default function Page() {
               {isConnected ? 'LIVE' : 'OFFLINE'}
             </span>
           </div>
+          <button onClick={() => setSettingsOpen(true)} title="Settings"
+            className="p-1.5 rounded-md border border-white/10 text-white/35 hover:text-white/65 hover:border-white/20 transition-colors">
+            <Settings className="w-3.5 h-3.5" />
+          </button>
           <ScreenShare onFrame={sendFrame} onStream={setStream} fps={3} quality={0.7} />
           <AudioVoice onAudioChunk={sendAudioChunk} onUserSpeech={handleUserSpeech} onAudioLevel={setAudioLevel} />
           <FloatingOracle
